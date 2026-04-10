@@ -166,7 +166,7 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
         dataset,
         batch_size=train_cfg["batch_size"],
         shuffle=True,
-        num_workers=4,
+        num_workers=0,  # data is preloaded in RAM, workers would duplicate it
         pin_memory=True,
         drop_last=True,
     )

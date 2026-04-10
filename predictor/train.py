@@ -243,7 +243,7 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
         dataset,
         batch_size=train_cfg["batch_size"],
         shuffle=True,
-        num_workers=4,
+        num_workers=0,  # data is preloaded in RAM
         pin_memory=True,
         drop_last=True,
     )
