@@ -1,0 +1,47 @@
+domain: vizdoom
+component: predictor
+
+model:
+  n_layers: 8
+  n_heads: 8
+  d_model: 512
+  d_ffn: 2048
+  context_frames: 8
+  tokens_per_frame: 256
+  codebook_size: 1024
+  action_dim: 72
+  action_embed_dim: 128
+  film_layers: [2, 4, 6, 8]
+  action_dropout: 0.15
+  scene_state_dim: 512
+  scene_state_alpha: 0.95
+  gru_dim: 512
+
+training:
+  batch_size: 4
+  lr: 1.0e-4
+  lr_min: 1.0e-6
+  warmup_steps: 2000
+  total_steps: 200000
+  grad_clip: 1.0
+  log_every: 100
+  eval_every: 5000
+  save_every: 5000
+
+loss:
+  inverse_dynamics_lambda: 0.1
+  inverse_dynamics_gap: 4
+
+scheduled_sampling:
+  max_p: 0.5
+  ramp_steps: 100000
+
+data:
+  resolution: 128
+  seq_len: 9
+  action_diversity_prob: 0.15
+  train_split: 0.95
+
+wandb:
+  project: frame-vizdoom
+  tags: [vizdoom, predictor, v1]

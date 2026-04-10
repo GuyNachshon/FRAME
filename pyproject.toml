@@ -1,7 +1,41 @@
 [project]
 name = "frame"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fast Recurrent Action-Masked Egocentric World Model"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "einops>=0.7.0",
+    "pygame>=2.5.0",
+    "wandb>=0.16.0",
+    "h5py>=3.10.0",
+    "lpips>=0.1.4",
+    "clean-fid>=0.1.35",
+    "accelerate>=0.27.0",
+    "pyyaml>=6.0.0",
+    "pillow>=10.0.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.3.0",
+]
+vizdoom = [
+    "vizdoom>=1.2.0",
+]
+
+[project.scripts]
+frame-demo = "inference.loop:main"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

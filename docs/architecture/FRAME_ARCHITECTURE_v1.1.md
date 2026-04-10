@@ -38,7 +38,7 @@ FRAME is a **small-scale interactive game world model** - a neural network train
 | ---                                                | ---         |
 | GRU continuous state (fast frame-to-frame memory)  | v1          |
 | ---                                                | ---         |
-| Causal transformer predictor (~100M params, fp32)  | v1          |
+| Causal transformer predictor (~30M params, fp32)   | v1          |
 | ---                                                | ---         |
 | FiLM action conditioning on alternating layers     | v1          |
 | ---                                                | ---         |
@@ -132,7 +132,7 @@ FRAME has six components trained in two stages. All components are domain-agnost
 | ---            | ---                                                                |
 | Precision      | fp32                                                               |
 | ---            | ---                                                                |
-| Approx params  | ~40M                                                               |
+| Approx params  | ~17M trainable (enc 7.2M + dec 7.2M + disc 2.8M) + 7.6M frozen VGG |
 | ---            | ---                                                                |
 | Encode latency | ~5ms / frame on A100                                               |
 | ---            | ---                                                                |
@@ -214,7 +214,7 @@ FRAME has six components trained in two stages. All components are domain-agnost
 | ---               | ---                                                                 |
 | Attention mask    | Causal over context; scene/GRU tokens attend to all                 |
 | ---               | ---                                                                 |
-| Total params      | ~95M (fp32)                                                         |
+| Total params      | ~30M (transformer 28.5M + GRU 1.6M + inverse dynamics 0.3M). Original estimate ~95M was incorrect for 8L/8H/512d; scale to d_model=768 (~65M) if capacity is insufficient |
 | ---               | ---                                                                 |
 | KV-cache          | Enabled at inference - only new tokens computed per step            |
 | ---               | ---                                                                 |
@@ -439,7 +439,7 @@ Build this on random noise before training anything. Half of demo failures have 
 - **Expert data bias.** Action diversity augmentation mitigates this but doesn't fully solve it. Users will generate action sequences the model has never seen.
 - **Inverse dynamics may produce weak signal at 1-step.** Use 4-step transitions. Profile single-frame token change rate on your actual game data first.
 - **FiLM conditioning can be gamed.** If training action distribution is too homogeneous, the model learns to produce plausible frames regardless of action. Action diversity augmentation is the mitigation.
-- **~100M params is a soft estimate.** Profile before committing to RunPod budget.
+- **Actual param count is ~30M** (8L/8H/512d/2048 FFN). Original ~95M estimate was incorrect. Scale to d_model=768 or n_layers=12 if capacity proves insufficient.
 
 # **11\. Compute Plan (RunPod)**
 

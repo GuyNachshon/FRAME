@@ -95,7 +95,7 @@ Five components, two training stages.
         ↓ (freeze)
 [Stage 2] Persistent scene state   → 512-dim EMA vector (slow, global memory)
         ↓
-[Stage 2] Causal transformer       → 8 layers, 512-dim, ~95M params
+[Stage 2] Causal transformer       → 8 layers, 512-dim, ~30M params
           + GRU continuous state   → 512-dim fast memory (per-frame update)
           + FiLM action cond.      → on layers 2,4,6,8 — unavoidable action signal
           + Inverse dynamics head  → predict action from (z_t, z_{t+4}) — anti-action-dropout

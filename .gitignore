@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.venv/
+.env
+*.key
+
+# Data
+data/vizdoom/raw/
+data/csgo/raw/
+*.hdf5
+*.h5
+
+# Checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Outputs
+outputs/
+wandb/
+runs/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Large files
+*.mp4
+*.avi
+
+# IDE
+.vscode/
+.idea/

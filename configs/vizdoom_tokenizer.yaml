@@ -1,0 +1,34 @@
+domain: vizdoom
+component: tokenizer
+
+model:
+  codebook_size: 1024
+  codebook_dim: 256
+  ema_decay: 0.99
+  commitment_beta: 0.25
+  encoder_channels: [64, 128, 256, 256]
+
+training:
+  batch_size: 32
+  lr: 2.0e-4
+  lr_min: 1.0e-5
+  total_steps: 100000
+  warmup_steps: 1000
+  grad_clip: 1.0
+  log_every: 100
+  eval_every: 5000
+  save_every: 5000
+
+loss:
+  perceptual_weight: 1.0
+  gan_weight: 0.1
+  commitment_beta: 0.25
+
+data:
+  resolution: 128
+  fps: 15
+  train_split: 0.95
+
+wandb:
+  project: frame-vizdoom
+  tags: [vizdoom, tokenizer, v1]

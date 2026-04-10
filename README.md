@@ -55,7 +55,7 @@ Frame t (128×128 RGB)
     │
     ▼
 ┌─────────────────────────────────────┐
-│  Causal Transformer  [Stage 2]      │  → 8 layers · 8 heads · 512-dim · ~95M params
+│  Causal Transformer  [Stage 2]      │  → 8 layers · 8 heads · 512-dim · ~30M params
 │  + GRU continuous state             │  → 512-dim fast memory (per-frame, full gradient)
 │  + FiLM action conditioning         │  → layers 2,4,6,8 — γ(a)·LayerNorm(x) + β(a)
 │  + Inverse dynamics head            │  → predict action from (z_t, z_{t+4})
