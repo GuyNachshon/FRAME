@@ -137,17 +137,19 @@ class VectorQuantizer(nn.Module):
         z_flat = z.permute(0, 2, 3, 1).reshape(-1, D)
 
         z_q, indices = self._quantize(z_flat)
-        self._ema_update(z_flat, indices)
-
-        # Dead code reset (periodic)
-        if self.training:
-            self._reset_dead_codes(z_flat)
 
         # Commitment loss: encourage encoder outputs to stay close to codes
         commitment_loss = self.commitment_beta * F.mse_loss(z_flat, z_q.detach())
 
         # Straight-through gradient: copy gradient from z_q to z
+        # Must happen BEFORE codebook is modified inplace by EMA
         z_q_st = z_flat + (z_q - z_flat).detach()
+
+        # EMA update and dead code reset use detached copies
+        # to avoid inplace modification conflicts with autograd/DDP
+        self._ema_update(z_flat.detach(), indices)
+        if self.training:
+            self._reset_dead_codes(z_flat.detach())
 
         # Track utilization
         unique_codes = indices.unique().numel()
