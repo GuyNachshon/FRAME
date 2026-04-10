@@ -34,7 +34,7 @@ class FiLMConditioning(nn.Module):
         self.dropout = dropout
         self.action_embed = nn.Sequential(
             nn.Linear(action_dim, embed_dim),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
         )
         # gamma and beta projections from action embedding
         self.gamma_proj = nn.Linear(embed_dim, model_dim)

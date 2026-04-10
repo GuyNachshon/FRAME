@@ -31,7 +31,7 @@ class InverseDynamicsHead(nn.Module):
         # Input: concatenation of z_t and z_{t+4} -> 2*latent_dim
         self.mlp = nn.Sequential(
             nn.Linear(2 * latent_dim, hidden_dim),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(hidden_dim, action_dim),
         )
 

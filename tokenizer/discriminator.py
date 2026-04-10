@@ -29,7 +29,7 @@ class PatchGANDiscriminator(nn.Module):
             # First layer: no normalization
             nn.Conv2d(in_channels, base_channels, kernel_size=4,
                       stride=2, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.2),
         ]
 
         ch = base_channels
@@ -40,7 +40,7 @@ class PatchGANDiscriminator(nn.Module):
                 nn.Conv2d(prev_ch, ch, kernel_size=4, stride=2,
                           padding=1, bias=False),
                 nn.BatchNorm2d(ch),
-                nn.LeakyReLU(0.2, inplace=True),
+                nn.LeakyReLU(0.2),
             ])
 
         # Second-to-last layer: stride 1
@@ -50,7 +50,7 @@ class PatchGANDiscriminator(nn.Module):
             nn.Conv2d(prev_ch, ch, kernel_size=4, stride=1,
                       padding=1, bias=False),
             nn.BatchNorm2d(ch),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.2),
         ])
 
         # Final layer: 1-channel output (real/fake score per patch)

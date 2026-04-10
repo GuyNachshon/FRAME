@@ -15,10 +15,10 @@ class ResBlock(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.GroupNorm(32, channels),
-            nn.SiLU(inplace=True),
+            nn.SiLU(),
             nn.Conv2d(channels, channels, 3, padding=1, bias=False),
             nn.GroupNorm(32, channels),
-            nn.SiLU(inplace=True),
+            nn.SiLU(),
             nn.Conv2d(channels, channels, 3, padding=1, bias=False),
         )
 
@@ -86,7 +86,7 @@ class CNNEncoder(nn.Module):
         # Project to codebook dimension
         layers.extend([
             nn.GroupNorm(32, channels[-1]),
-            nn.SiLU(inplace=True),
+            nn.SiLU(),
             nn.Conv2d(channels[-1], codebook_dim, 1),
         ])
 

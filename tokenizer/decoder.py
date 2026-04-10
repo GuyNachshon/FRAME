@@ -69,7 +69,7 @@ class CNNDecoder(nn.Module):
         # Final projection to RGB
         layers.extend([
             nn.GroupNorm(32, channels[-1]),
-            nn.SiLU(inplace=True),
+            nn.SiLU(),
             nn.Conv2d(channels[-1], out_channels, 3, padding=1),
             nn.Sigmoid(),
         ])
