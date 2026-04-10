@@ -96,7 +96,7 @@ def save_checkpoint(
         "encoder": _unwrap(encoder).state_dict(),
         "vq": vq.state_dict(),  # VQ is not wrapped by DDP
         "decoder": _unwrap(decoder).state_dict(),
-        "discriminator": _unwrap(discriminator).state_dict(),
+        "discriminator": discriminator.state_dict(),  # not DDP-wrapped
         "opt_gen": opt_gen.state_dict(),
         "opt_disc": opt_disc.state_dict(),
         "config": config,
@@ -173,12 +173,14 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
 
     # Prepare with accelerate (handles DDP wrapping, device placement, dataloader sharding)
     # VQ is NOT wrapped — its EMA codebook must be consistent across processes.
-    # We manually move it to the accelerator device.
-    encoder, decoder, discriminator, opt_gen, opt_disc, loader = accelerator.prepare(
-        encoder, decoder, discriminator, opt_gen, opt_disc, loader,
+    # Discriminator is NOT wrapped — GAN training with DDP causes inplace
+    # BatchNorm conflicts. At 2.8M params the parallel overhead is negligible.
+    encoder, decoder, opt_gen, opt_disc, loader = accelerator.prepare(
+        encoder, decoder, opt_gen, opt_disc, loader,
     )
     loss_fn = loss_fn.to(accelerator.device)
     vq = vq.to(accelerator.device)
+    discriminator = discriminator.to(accelerator.device)
 
     # wandb (main process only)
     if is_main:
@@ -238,9 +240,6 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
             pg["lr"] = lr
 
         # ---- Generator step ----
-        # Freeze discriminator so DDP doesn't track it during gen backward
-        _unwrap(discriminator).requires_grad_(False)
-
         z = encoder(frames)
         z_q, commitment_loss, indices = vq(z)
         x_recon = decoder(z_q)
@@ -255,17 +254,15 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
         opt_gen.step()
 
         # ---- Discriminator step ----
-        _unwrap(discriminator).requires_grad_(True)
-
         disc_real = discriminator(frames.detach())
-        disc_fake = discriminator(x_recon.detach())
-        d_loss = loss_fn.discriminator_loss(disc_real, disc_fake)
+        disc_fake_d = discriminator(x_recon.detach())
+        d_loss = loss_fn.discriminator_loss(disc_real, disc_fake_d)
 
         opt_disc.zero_grad()
-        accelerator.backward(d_loss)
+        d_loss.backward()  # direct backward, not accelerator (disc is not DDP)
         if train_cfg.get("grad_clip"):
-            accelerator.clip_grad_norm_(
-                _unwrap(discriminator).parameters(), train_cfg["grad_clip"]
+            nn.utils.clip_grad_norm_(
+                discriminator.parameters(), train_cfg["grad_clip"]
             )
         opt_disc.step()
 
