@@ -332,15 +332,17 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
                 vq.reset_usage_tracking()
 
                 with torch.no_grad():
-                    sample = frames[:8]
+                    sample = frames[:4]
                     z_s = _unwrap(encoder)(sample)
                     z_q_s, _, _ = vq(z_s)
                     recon_s = _unwrap(decoder)(z_q_s)
-                    grid = torch.cat([sample, recon_s], dim=3)
-                    grid = grid.clamp(0, 1)
+                    # Stack original and recon side by side, then vertically
+                    pairs = torch.cat([sample, recon_s], dim=3)  # (4, 3, 128, 256)
+                    grid = torch.cat(list(pairs), dim=1)  # (3, 512, 256)
+                    grid = grid.clamp(0, 1).permute(1, 2, 0).cpu().numpy()  # (H, W, 3)
                     wandb.log({
                         "samples/reconstructions": wandb.Image(
-                            grid.cpu(), caption=f"Step {step}: original | recon"
+                            grid, caption=f"Step {step}: original | recon"
                         ),
                     }, step=step)
 
