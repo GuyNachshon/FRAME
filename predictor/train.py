@@ -14,6 +14,8 @@ Usage:
 
 import argparse
 import math
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -269,12 +271,16 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
 
     data_iter = iter(loader)
     step = start_step
+    t_train_start = time.time()
 
-    print(f"\nTraining predictor for {total_steps} steps...")
+    print(f"\nTraining predictor for {total_steps:,} steps...")
     print(f"  Batch size: {train_cfg['batch_size']}")
     print(f"  Context frames: {model_cfg['context_frames']}")
     print(f"  Inv. dynamics gap: {inv_gap}, lambda: {inv_lambda}")
-    print(f"  Device: {device}\n")
+    print(f"  Device: {device}")
+    print(f"  Log every {train_cfg['log_every']} steps, "
+          f"save every {train_cfg['save_every']} steps")
+    print()
 
     while step < total_steps:
         # Get batch
@@ -363,6 +369,25 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
 
         step += 1
 
+        # Live progress line every 10 steps
+        if step % 10 == 0:
+            elapsed = time.time() - t_train_start
+            steps_done = step - start_step
+            steps_per_sec = steps_done / elapsed if elapsed > 0 else 0
+            eta_sec = (total_steps - step) / steps_per_sec if steps_per_sec > 0 else 0
+            eta_m, eta_s = divmod(int(eta_sec), 60)
+            eta_h, eta_m = divmod(eta_m, 60)
+            pct = step / total_steps * 100
+            sys.stdout.write(
+                f"\r  [{pct:5.1f}%] step {step:>7,}/{total_steps:,} | "
+                f"{steps_per_sec:.1f} it/s | "
+                f"loss={total_loss.item():.3f} "
+                f"pred={pred_loss.item():.3f} "
+                f"inv={inv_loss.item():.3f} | "
+                f"ETA {eta_h}h{eta_m:02d}m"
+            )
+            sys.stdout.flush()
+
         # Logging
         if step % train_cfg["log_every"] == 0:
             # Token accuracy
@@ -382,8 +407,11 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
             wandb.log(log_dict, step=step)
 
             if step % (train_cfg["log_every"] * 10) == 0:
+                elapsed = time.time() - t_train_start
+                steps_per_sec = (step - start_step) / elapsed if elapsed > 0 else 0
                 print(
-                    f"Step {step:7d}/{total_steps} | "
+                    f"\n  Step {step:>7,}/{total_steps:,} "
+                    f"({steps_per_sec:.1f} it/s) | "
                     f"loss={total_loss.item():.4f} "
                     f"pred={pred_loss.item():.4f} "
                     f"inv={inv_loss.item():.4f} "

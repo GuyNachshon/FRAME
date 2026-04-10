@@ -10,6 +10,8 @@ Usage:
 
 import argparse
 import math
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -185,11 +187,18 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
     best_recon_loss = float("inf")
     data_iter = iter(loader)
     step = start_step
+    t_train_start = time.time()
+    t_last_log = time.time()
+    recent_losses: dict[str, float] = {}
 
-    print(f"\nTraining tokenizer for {total_steps} steps...")
+    print(f"\nTraining tokenizer for {total_steps:,} steps...")
     print(f"  Batch size: {train_cfg['batch_size']}")
     print(f"  LR: {train_cfg['lr']} -> {train_cfg['lr_min']}")
-    print(f"  Device: {device}\n")
+    print(f"  Device: {device}")
+    print(f"  Log every {train_cfg['log_every']} steps, "
+          f"eval every {train_cfg['eval_every']} steps, "
+          f"save every {train_cfg['save_every']} steps")
+    print()
 
     while step < total_steps:
         # Get batch (cycle through dataset)
@@ -238,28 +247,59 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
         # ---- Logging ----
         step += 1
 
+        # Live progress line every 10 steps (overwrite in place)
+        if step % 10 == 0:
+            elapsed = time.time() - t_train_start
+            steps_done = step - start_step
+            steps_per_sec = steps_done / elapsed if elapsed > 0 else 0
+            eta_sec = (total_steps - step) / steps_per_sec if steps_per_sec > 0 else 0
+            eta_m, eta_s = divmod(int(eta_sec), 60)
+            eta_h, eta_m = divmod(eta_m, 60)
+            pct = step / total_steps * 100
+            sys.stdout.write(
+                f"\r  [{pct:5.1f}%] step {step:>7,}/{total_steps:,} | "
+                f"{steps_per_sec:.1f} it/s | "
+                f"loss={losses['total'].item():.3f} "
+                f"recon={losses['recon'].item():.3f} "
+                f"util={vq.utilization():.0%} | "
+                f"ETA {eta_h}h{eta_m:02d}m"
+            )
+            sys.stdout.flush()
+
         if step % train_cfg["log_every"] == 0:
             util = vq.utilization()
+            recent_losses = {
+                "total": losses["total"].item(),
+                "recon": losses["recon"].item(),
+                "perceptual": losses["perceptual"].item(),
+                "gan_gen": losses["gan_gen"].item(),
+                "commitment": losses["commitment"].item(),
+                "disc": d_loss.item(),
+            }
             log_dict = {
-                "train/total_loss": losses["total"].item(),
-                "train/recon_loss": losses["recon"].item(),
-                "train/perceptual_loss": losses["perceptual"].item(),
-                "train/gan_loss": losses["gan_gen"].item(),
-                "train/commitment_loss": losses["commitment"].item(),
-                "train/disc_loss": d_loss.item(),
+                "train/total_loss": recent_losses["total"],
+                "train/recon_loss": recent_losses["recon"],
+                "train/perceptual_loss": recent_losses["perceptual"],
+                "train/gan_loss": recent_losses["gan_gen"],
+                "train/commitment_loss": recent_losses["commitment"],
+                "train/disc_loss": recent_losses["disc"],
                 "train/codebook_utilization": util,
                 "train/lr": lr,
             }
             wandb.log(log_dict, step=step)
 
+            # Full line print every log_every*10 steps
             if step % (train_cfg["log_every"] * 10) == 0:
+                elapsed = time.time() - t_train_start
+                steps_per_sec = (step - start_step) / elapsed if elapsed > 0 else 0
                 print(
-                    f"Step {step:7d}/{total_steps} | "
-                    f"loss={losses['total'].item():.4f} "
-                    f"recon={losses['recon'].item():.4f} "
-                    f"perc={losses['perceptual'].item():.4f} "
-                    f"gan={losses['gan_gen'].item():.4f} "
-                    f"disc={d_loss.item():.4f} "
+                    f"\n  Step {step:>7,}/{total_steps:,} "
+                    f"({steps_per_sec:.1f} it/s) | "
+                    f"loss={recent_losses['total']:.4f} "
+                    f"recon={recent_losses['recon']:.4f} "
+                    f"perc={recent_losses['perceptual']:.4f} "
+                    f"gan={recent_losses['gan_gen']:.4f} "
+                    f"disc={recent_losses['disc']:.4f} "
                     f"util={util:.1%} "
                     f"lr={lr:.2e}"
                 )
