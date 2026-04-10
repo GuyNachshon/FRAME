@@ -238,6 +238,9 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
             pg["lr"] = lr
 
         # ---- Generator step ----
+        # Freeze discriminator so DDP doesn't track it during gen backward
+        _unwrap(discriminator).requires_grad_(False)
+
         z = encoder(frames)
         z_q, commitment_loss, indices = vq(z)
         x_recon = decoder(z_q)
@@ -252,7 +255,9 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
         opt_gen.step()
 
         # ---- Discriminator step ----
-        disc_real = discriminator(frames)
+        _unwrap(discriminator).requires_grad_(True)
+
+        disc_real = discriminator(frames.detach())
         disc_fake = discriminator(x_recon.detach())
         d_loss = loss_fn.discriminator_loss(disc_real, disc_fake)
 
