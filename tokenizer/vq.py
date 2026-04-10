@@ -70,8 +70,14 @@ class VectorQuantizer(nn.Module):
         z_q = self.codebook[indices]
         return z_q, indices
 
+    @torch.no_grad()
     def _ema_update(self, z_flat: torch.Tensor, indices: torch.LongTensor) -> None:
-        """Update codebook via EMA on assigned encoder outputs."""
+        """Update codebook via EMA on assigned encoder outputs.
+
+        Wrapped in no_grad because EMA updates are statistics, not learned
+        parameters. The inplace ops (.mul_, .add_, .copy_) would break
+        autograd under DDP without this.
+        """
         if not self.training:
             return
 
@@ -95,6 +101,7 @@ class VectorQuantizer(nn.Module):
         # Track usage
         self.usage_count.add_(count)
 
+    @torch.no_grad()
     def _reset_dead_codes(self, z_flat: torch.Tensor) -> None:
         """Re-initialize dead codes from random encoder outputs."""
         if not self.training:
