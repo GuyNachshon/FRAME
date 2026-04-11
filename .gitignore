@@ -14,8 +14,10 @@ build/
 # Data
 data/vizdoom/raw/
 data/csgo/raw/
+.npy_cache/
 *.hdf5
 *.h5
+*.npy
 
 # Checkpoints
 checkpoints/

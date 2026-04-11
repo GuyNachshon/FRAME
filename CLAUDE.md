@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 FRAME (Fast Recurrent Action-Masked Egocentric World Model) is a real-time interactive neural world model trained on egocentric game footage. Users navigate hallucinated environments via keyboard at ≥15fps on a single GPU. No game engine — pure neural network imagination.
 
 all relevant information for project is under @docs. follow @docs/BEST_PRACTICES.md when creating files/working with gh etc..
+After every training run or architectural decision, update @docs/RESEARCH_NOTEBOOK.md.
 
 **Demo targets:** ViZDoom (scaffold, v1) → CS:GO dust2 (headline, v1) → ternary weights on laptop CPU (paper, v2).
 

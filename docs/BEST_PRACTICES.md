@@ -541,7 +541,8 @@ notebooks/
 | Architecture decisions | `docs/FRAME_architecture_v1.1.docx` |
 | Project plan and timeline | `docs/FRAME_plan.md` |
 | Engineering conventions | `docs/BEST_PRACTICES.md` (this file) |
-| Training run results | Git commit messages |
+| Research log & training runs | `docs/RESEARCH_NOTEBOOK.md` |
+| Training run results | Git commit messages + research notebook |
 | Experiment hypotheses | Wandb run descriptions |
 | Module-level docs | Docstrings in Python |
 | Quick reference | `README.md` |
@@ -573,6 +574,8 @@ In order of importance:
 7. **Clear notebook outputs before committing.** Always.
 
 8. **Fail loudly at init time.** Assert configs at construction, not at training step 50k.
+
+9. **Update the research notebook after every training run.** `docs/RESEARCH_NOTEBOOK.md` is the ground truth log. Record results, surprises, failures, and architectural decisions. Wandb expires, commit messages are terse — the notebook is where the full story lives.
 
 ---
 
