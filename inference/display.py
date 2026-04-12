@@ -22,14 +22,15 @@ class FrameDisplay:
         title: Window title
     """
 
-    def __init__(self, resolution: int = 128, upscale: int = 4,
+    def __init__(self, resolution: int = 128, upscale: int = 2,
                  title: str = "FRAME") -> None:
         self.resolution = resolution
         self.display_size = resolution * upscale
 
         pygame.init()
         self.screen = pygame.display.set_mode(
-            (self.display_size, self.display_size)
+            (self.display_size, self.display_size),
+            pygame.SCALED,  # hardware-accelerated scaling
         )
         pygame.display.set_caption(title)
         self.font = pygame.font.SysFont("monospace", 18)

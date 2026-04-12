@@ -117,6 +117,7 @@ def save_checkpoint(
     step: int,
     config: dict,
     best_pred_loss: float,
+    best_action_sensitivity: float = 0.0,
 ) -> None:
     """Save all predictor state for resume."""
     torch.save({
@@ -128,6 +129,7 @@ def save_checkpoint(
         "optimizer": optimizer.state_dict(),
         "config": config,
         "best_pred_loss": best_pred_loss,
+        "best_action_sensitivity": best_action_sensitivity,
     }, path)
 
 
@@ -222,6 +224,8 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
     # Resume
     start_step = 0
     best_pred_loss = float("inf")
+    best_action_sensitivity = 0.0
+    ema_sensitivity = 0.0  # EMA-smoothed action sensitivity for checkpoint tracking
     if resume:
         ckpt = torch.load(resume, map_location="cpu", weights_only=False)
         predictor.load_state_dict(ckpt["predictor"])
@@ -231,13 +235,15 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
         optimizer.load_state_dict(ckpt["optimizer"])
         start_step = ckpt["step"]
         best_pred_loss = ckpt.get("best_pred_loss", float("inf"))
+        best_action_sensitivity = ckpt.get("best_action_sensitivity", 0.0)
+        ema_sensitivity = best_action_sensitivity
         if is_main:
             print(f"Resumed from step {start_step}")
 
     # Dataset
     data_cfg = config["data"]
     if data_path is None:
-        data_path = f"data/{config['domain']}/raw/vizdoom_data.hdf5"
+        data_path = data_cfg.get("path", f"data/{config['domain']}/raw/vizdoom_data.hdf5")
     dataset = ViZDoomSequenceDataset(data_path, seq_len=data_cfg["seq_len"])
     loader = DataLoader(
         dataset,
@@ -416,41 +422,97 @@ def train_predictor(config_path: str, tokenizer_checkpoint: str | None = None,
                         f"lr={lr:.2e}"
                     )
 
-            # Checkpoint
+            # Checkpoint + action sensitivity + inv_acc eval (multi-batch)
             if step % train_cfg["save_every"] == 0:
                 with torch.no_grad():
                     pred_indices = logits.argmax(dim=-1)
                     accuracy = (pred_indices == target_tokens).float().mean().item()
-                    inv_acc = 0.0
-                    if T_total > inv_gap:
-                        inv_pred = inv_logits.argmax(dim=-1)
-                        inv_acc = (inv_pred == inv_target).float().mean().item()
+
+                    # Multi-batch inverse dynamics accuracy (50 batches)
+                    inv_correct = 0
+                    inv_total = 0
+                    eval_iter = iter(loader)
+                    for _ in range(50):
+                        try:
+                            ev_frames, ev_actions = next(eval_iter)
+                        except StopIteration:
+                            eval_iter = iter(loader)
+                            ev_frames, ev_actions = next(eval_iter)
+                        ev_B, ev_T = ev_frames.shape[:2]
+                        if ev_T <= inv_gap:
+                            continue
+                        ev_tokens = _tokenize_frames(tok_encoder, tok_vq, ev_frames)
+                        ev_z_t = _unwrap(predictor).token_embed(
+                            ev_tokens[:, 0, :]
+                        ).mean(dim=1)
+                        ev_z_t4 = _unwrap(predictor).token_embed(
+                            ev_tokens[:, min(inv_gap, ev_T - 1), :]
+                        ).mean(dim=1)
+                        ev_logits = _unwrap(inverse_head)(ev_z_t, ev_z_t4)
+                        ev_pred = ev_logits[:, :8].argmax(dim=1)
+                        ev_gt = ev_actions[:, 0].argmax(dim=1)
+                        inv_correct += (ev_pred == ev_gt).sum().item()
+                        inv_total += ev_B
+                    inv_acc = inv_correct / inv_total if inv_total > 0 else 0.0
+
+                    # Action sensitivity on current batch
+                    action_fwd = torch.zeros(B, 72, device=accelerator.device)
+                    action_fwd[:, 0] = 1.0
+                    action_bwd = torch.zeros(B, 72, device=accelerator.device)
+                    action_bwd[:, 1] = 1.0
+                    logits_fwd, _ = _unwrap(predictor)(
+                        context_tokens, action_fwd, scene_tok, gru_hidden,
+                    )
+                    logits_bwd, _ = _unwrap(predictor)(
+                        context_tokens, action_bwd, scene_tok, gru_hidden,
+                    )
+                    flat_fwd = logits_fwd.reshape(B, -1)
+                    flat_bwd = logits_bwd.reshape(B, -1)
+                    batch_sensitivity = (
+                        1.0 - F.cosine_similarity(flat_fwd, flat_bwd, dim=1)
+                    ).mean().item()
+
+                    # EMA smoothing
+                    ema_sensitivity = 0.9 * ema_sensitivity + 0.1 * batch_sensitivity
 
                 wandb.log({
                     "checkpoint/token_accuracy": accuracy,
                     "checkpoint/inverse_dynamics_acc": inv_acc,
+                    "checkpoint/action_sensitivity": batch_sensitivity,
+                    "checkpoint/action_sensitivity_ema": ema_sensitivity,
                 }, step=step)
-                print(f"\n  [checkpoint] step {step}: acc={accuracy:.3f}, inv_acc={inv_acc:.3f}")
+                print(f"\n  [checkpoint] step {step}: acc={accuracy:.3f}, "
+                      f"inv_acc={inv_acc:.3f}, sensitivity={batch_sensitivity:.4f} "
+                      f"(ema={ema_sensitivity:.4f})")
 
                 ckpt_path = ckpt_dir / f"predictor_{step:07d}.pt"
                 save_checkpoint(
                     ckpt_path, predictor, scene_state, gru, inverse_head,
                     optimizer, step, config, best_pred_loss,
+                    best_action_sensitivity,
                 )
-                if pred_loss.item() < best_pred_loss:
-                    best_pred_loss = pred_loss.item()
+
+                # Track best by action sensitivity (EMA-smoothed)
+                if ema_sensitivity > best_action_sensitivity:
+                    best_action_sensitivity = ema_sensitivity
                     best_path = ckpt_dir / "predictor_best.pt"
                     save_checkpoint(
                         best_path, predictor, scene_state, gru, inverse_head,
                         optimizer, step, config, best_pred_loss,
+                        best_action_sensitivity,
                     )
-                    print(f"  [best] new best pred_loss={best_pred_loss:.4f} at step {step}")
+                    print(f"  [best] new best action_sensitivity={ema_sensitivity:.4f} at step {step}")
+
+                # Also track pred_loss (for reference, not for best checkpoint)
+                if pred_loss.item() < best_pred_loss:
+                    best_pred_loss = pred_loss.item()
 
     if is_main:
         save_checkpoint(
             ckpt_dir / f"predictor_{step:07d}.pt",
             predictor, scene_state, gru, inverse_head,
             optimizer, step, config, best_pred_loss,
+            best_action_sensitivity,
         )
         wandb.finish()
         print(f"\nTraining complete. Final step: {step}")

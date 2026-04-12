@@ -160,7 +160,8 @@ def train_tokenizer(config_path: str, data_path: str | None = None,
 
     # Dataset
     if data_path is None:
-        data_path = f"data/{config['domain']}/raw/vizdoom_data.hdf5"
+        data_cfg = config.get("data", {})
+        data_path = data_cfg.get("path", f"data/{config['domain']}/raw/vizdoom_data.hdf5")
     dataset = ViZDoomFrameDataset(data_path)
     loader = DataLoader(
         dataset,

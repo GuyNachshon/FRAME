@@ -123,6 +123,20 @@ Record things that didn't work — these are as valuable as successes.
 **Root cause:** DDP tracks BatchNorm running mean/var as inplace modifications. When discriminator runs twice per step (once for gen loss, once for disc loss), the version counter increments conflict. The `requires_grad_(False)` trick doesn't prevent BN stat tracking.
 **Lesson:** Don't DDP-wrap the discriminator in a GAN. Keep it as a plain model on device. At 2.8M params the parallelization overhead is negligible anyway.
 
+### 2026-04-12 Best checkpoint tracked wrong metric — pred_loss vs action_sensitivity
+
+**What was tried:** Saving `predictor_best.pt` based on lowest prediction loss.
+**What happened:** Checkpoint sweep across all 40 checkpoints showed step 60k (best pred_loss=1.97) ranked 22nd out of 40 by action sensitivity. Step 155k (action_sensitivity=0.2961) is the actual best for demo quality.
+**Root cause:** pred_loss measures token prediction accuracy, but action sensitivity measures whether different actions produce different outputs — which is what determines demo quality. They don't correlate well.
+**Lesson:** Track the metric that matters for the end goal. For interactive world models, action sensitivity > pred_loss for checkpoint selection. Fixed: now tracking EMA-smoothed action sensitivity for best checkpoint.
+
+### 2026-04-12 Tokenizer does not transfer across ViZDoom scenarios
+
+**What was tried:** Using tokenizer trained on `basic` scenario to tokenize `my_way_home` maze frames.
+**What happened:** LPIPS went from 0.039 (basic→basic) to 0.632 (basic→maze). Codebook doesn't cover the maze visual domain.
+**Root cause:** ViZDoom scenarios have significantly different visual content (brown room vs blue/grey maze corridors). The codebook learned texture codes specific to the basic scenario.
+**Lesson:** Always verify LPIPS when changing visual domains. Retrain tokenizer for each new scenario/domain.
+
 ---
 
 ## Open Questions (Empirical)

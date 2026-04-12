@@ -13,7 +13,9 @@ build/
 
 # Data
 data/vizdoom/raw/
+data/vizdoom/raw_*/
 data/csgo/raw/
+data/hf_deathmatch/*.hdf5
 .npy_cache/
 *.hdf5
 *.h5

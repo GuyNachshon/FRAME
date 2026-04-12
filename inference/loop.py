@@ -115,6 +115,8 @@ def main() -> None:
                         help="Skip display (for headless profiling)")
     parser.add_argument("--temperature", type=float, default=0.0,
                         help="Sampling temperature (0=argmax, >0=stochastic)")
+    parser.add_argument("--debug_keys", action="store_true",
+                        help="Print keyboard actions to stdout")
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -176,6 +178,10 @@ def main() -> None:
                     action[7] = 1.0  # noop
                     action[8] = 1.0  # mouse center
                 t_keyboard = time.perf_counter() - t0
+
+                if args.debug_keys and action[:8].sum() > 0:
+                    from inference.keyboard import get_action_name
+                    print(f"  [key] {get_action_name(action)}")
 
                 if use_stub:
                     # --- Stub pipeline (unchanged) ---
