@@ -193,6 +193,9 @@ def convert_full(output_path: str, resolution: int = 128,
                  max_frames: int | None = None) -> None:
     """Task 2c: Download full dataset and convert to HDF5.
 
+    Streams rows and writes to HDF5 incrementally to avoid OOM.
+    763k frames at 128x128x3 = ~37GB — cannot fit in RAM.
+
     Args:
         output_path: Path for output HDF5 file
         resolution: Target frame resolution
@@ -200,76 +203,130 @@ def convert_full(output_path: str, resolution: int = 128,
     """
     from datasets import load_dataset
 
-    print("Loading full dataset P-H-B-D-a16z/ViZDoom-Deathmatch-PPO-XLrg...")
+    print("Loading dataset P-H-B-D-a16z/ViZDoom-Deathmatch-PPO-XLrg...")
     ds = load_dataset(
         "P-H-B-D-a16z/ViZDoom-Deathmatch-PPO-XLrg",
         split="train",
-        trust_remote_code=True,
     )
     print(f"  Loaded {len(ds)} rows")
+
+    # Estimate total frames (10 per row)
+    est_frames = min(len(ds) * 10, max_frames or len(ds) * 10)
 
     out_dir = Path(output_path).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    frames_list: list[np.ndarray] = []
-    actions_list: list[np.ndarray] = []
-    episode_ids_list: list[int] = []
-    n_frames = 0
+    print(f"  Writing incrementally to {output_path}...")
 
-    for row_idx, row in enumerate(ds):
-        episode_id = row.get("episode_id", row_idx)
-        images = row["images"]
-        actions = row["actions"]
+    with h5py.File(output_path, "w") as f:
+        # Create resizable datasets
+        frames_ds = f.create_dataset(
+            "frames",
+            shape=(0, resolution, resolution, 3),
+            maxshape=(None, resolution, resolution, 3),
+            dtype=np.uint8,
+            chunks=(64, resolution, resolution, 3),
+            compression="gzip",
+            compression_opts=4,
+        )
+        actions_ds = f.create_dataset(
+            "actions",
+            shape=(0, 8),
+            maxshape=(None, 8),
+            dtype=np.float32,
+            chunks=(1024, 8),
+        )
+        episodes_ds = f.create_dataset(
+            "episode_ids",
+            shape=(0,),
+            maxshape=(None,),
+            dtype=np.int32,
+            chunks=(1024,),
+        )
 
-        if not isinstance(images, list):
-            images = [images]
-        if not isinstance(actions, list):
-            actions = [actions]
+        n_frames = 0
+        # Buffer to reduce resize frequency
+        buf_frames: list[np.ndarray] = []
+        buf_actions: list[np.ndarray] = []
+        buf_episodes: list[int] = []
+        FLUSH_SIZE = 1000  # flush every 1000 frames
 
-        for img_str, act_int in zip(images, actions):
+        for row_idx in range(len(ds)):
+            row = ds[row_idx]
+            episode_id = row.get("episode_id", row_idx)
+            images = row["images"]
+            actions = row["actions"]
+
+            if not isinstance(images, list):
+                images = [images]
+            if not isinstance(actions, list):
+                actions = [actions]
+
+            for img_str, act_int in zip(images, actions):
+                if max_frames and n_frames >= max_frames:
+                    break
+
+                buf_frames.append(_decode_frame(img_str, resolution))
+                buf_actions.append(_map_action(act_int))
+                buf_episodes.append(int(episode_id))
+                n_frames += 1
+
+            # Flush buffer to HDF5
+            if len(buf_frames) >= FLUSH_SIZE:
+                n_new = len(buf_frames)
+                old_size = frames_ds.shape[0]
+                frames_ds.resize(old_size + n_new, axis=0)
+                actions_ds.resize(old_size + n_new, axis=0)
+                episodes_ds.resize(old_size + n_new, axis=0)
+
+                frames_ds[old_size:] = np.stack(buf_frames)
+                actions_ds[old_size:] = np.stack(buf_actions)
+                episodes_ds[old_size:] = np.array(buf_episodes, dtype=np.int32)
+
+                buf_frames.clear()
+                buf_actions.clear()
+                buf_episodes.clear()
+
             if max_frames and n_frames >= max_frames:
                 break
 
-            frame = _decode_frame(img_str, resolution)
-            action = _map_action(act_int)
+            if (row_idx + 1) % 2000 == 0:
+                print(f"  {row_idx + 1}/{len(ds)} rows, {n_frames:,} frames")
 
-            frames_list.append(frame)
-            actions_list.append(action)
-            episode_ids_list.append(int(episode_id))
-            n_frames += 1
+        # Flush remaining
+        if buf_frames:
+            n_new = len(buf_frames)
+            old_size = frames_ds.shape[0]
+            frames_ds.resize(old_size + n_new, axis=0)
+            actions_ds.resize(old_size + n_new, axis=0)
+            episodes_ds.resize(old_size + n_new, axis=0)
 
-        if max_frames and n_frames >= max_frames:
-            break
+            frames_ds[old_size:] = np.stack(buf_frames)
+            actions_ds[old_size:] = np.stack(buf_actions)
+            episodes_ds[old_size:] = np.array(buf_episodes, dtype=np.int32)
 
-        if (row_idx + 1) % 1000 == 0:
-            print(f"  Processed {row_idx + 1}/{len(ds)} rows, {n_frames} frames")
-
-    print(f"\n  Total frames: {n_frames}")
-    print(f"  Saving to {output_path}...")
-
-    with h5py.File(output_path, "w") as f:
-        f.create_dataset("frames", data=np.stack(frames_list),
-                         compression="gzip", compression_opts=4)
-        f.create_dataset("actions", data=np.stack(actions_list))
-        f.create_dataset("episode_ids",
-                         data=np.array(episode_ids_list, dtype=np.int32))
         f.attrs["n_frames"] = n_frames
         f.attrs["resolution"] = resolution
         f.attrs["source"] = "P-H-B-D-a16z/ViZDoom-Deathmatch-PPO-XLrg"
 
-    # Quality checks
+    # Quality checks (read back from file, not from RAM)
+    print(f"\n  Total frames: {n_frames:,}")
     print(f"\n  Quality checks:")
-    actions_arr = np.stack(actions_list)
-    action_counts = actions_arr.sum(axis=0)
-    print(f"    Action distribution: {action_counts.astype(int).tolist()}")
-    print(f"    All actions have samples: {(action_counts > 0).all()}")
+    with h5py.File(output_path, "r") as f:
+        actions_arr = f["actions"][:]
+        act_counts = actions_arr.sum(axis=0).astype(int)
+        names = ["forward", "back", "left", "right",
+                 "turn_L", "turn_R", "shoot", "noop"]
+        print(f"    Action distribution:")
+        for name, count in zip(names, act_counts):
+            print(f"      {name:>8s}: {count:>7d} ({count / n_frames * 100:.1f}%)")
 
-    episodes = np.array(episode_ids_list)
-    unique_eps = np.unique(episodes)
-    ep_lens = [np.sum(episodes == e) for e in unique_eps]
-    print(f"    Episodes: {len(unique_eps)}")
-    print(f"    Episode length: mean={np.mean(ep_lens):.0f}, "
-          f"min={np.min(ep_lens)}, max={np.max(ep_lens)}")
+        episodes = f["episode_ids"][:]
+        unique_eps = np.unique(episodes)
+        ep_lens = [np.sum(episodes == e) for e in unique_eps]
+        print(f"    Episodes: {len(unique_eps)}")
+        print(f"    Episode length: mean={np.mean(ep_lens):.0f}, "
+              f"min={np.min(ep_lens)}, max={np.max(ep_lens)}")
 
     print(f"\n  Done. {output_path}")
 
